@@ -2,14 +2,14 @@
 
 import datetime as dt
 import math
+import pickle
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from xgboost import XGBRegressor
 
-
-MODEL_PATH = Path(__file__).parent / "artifacts_daily" / "daily_xgboost_model.json"
+MODEL_PATH = Path(__file__).parent / "artifacts_daily" / "daily_xgboost_model.pkl"
 def validate_inputs(date_text, current_generation):
     try:
         date = dt.date.fromisoformat(date_text)
@@ -18,7 +18,6 @@ def validate_inputs(date_text, current_generation):
     if not math.isfinite(current_generation) or current_generation < 0:
         raise ValueError("Current energy generation must be a non-negative number.")
     return date
-
 
 def build_features(date_text, current_generation):
     date = validate_inputs(date_text, current_generation)
@@ -36,21 +35,17 @@ def build_features(date_text, current_generation):
     }
     return pd.DataFrame([values])
 
-
 def load_model(path=MODEL_PATH):
     if not path.exists():
         raise FileNotFoundError(
             "Trained model not found. Run: .venv/bin/python train_daily_xgboost.py"
         )
-    model = XGBRegressor()
-    model.load_model(path)
-    return model
-
+    with path.open("rb") as model_file:
+        return pickle.load(model_file)
 
 def predict_realized_load(date_text, current_generation, model):
     features = build_features(date_text, current_generation)
     return float(model.predict(features)[0])
-
 
 def calculate_balance(current_generation, predicted_load):
     if not math.isfinite(predicted_load) or predicted_load <= 0:

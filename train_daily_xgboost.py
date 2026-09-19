@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -136,6 +137,8 @@ def main() -> None:
     ).sort_values("importance", ascending=False)
 
     model.save_model(ARTIFACT_DIR / "daily_xgboost_model.json")
+    with (ARTIFACT_DIR / "daily_xgboost_model.pkl").open("wb") as model_file:
+        pickle.dump(model, model_file)
     predictions.to_csv(ARTIFACT_DIR / "test_predictions.csv", index=False)
     importance.to_csv(ARTIFACT_DIR / "feature_importance.csv", index=False)
     (ARTIFACT_DIR / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
