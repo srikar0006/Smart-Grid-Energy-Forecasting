@@ -11,14 +11,15 @@ the same 24 hours. All 3,549 days contain exactly 24 hourly observations.
 
 ## Model result
 
-- Features: date-derived values and `current_energy_generation` only
+- Features: generation, weekday, annual cycle, and realized-load lags of 1 and 7 days
 - Split: chronological 72% fit, 8% early-stopping validation, 20% test
 - Test period: 2022-10-10 through 2024-09-18
 - Test days: 710
-- **Test R²: 0.717790**
-- MAE: 661.477
-- RMSE: 817.494
+- **Test R²: 0.859138**
+- MAE: 438.231
+- RMSE: 577.558
+- Out-of-range fallback R²: 0.752514
 
-This is a stricter future-period score. The earlier hourly R² is not comparable
-because that model also used prior realized-load measurements and separate
-generation columns.
+The application looks up lag values automatically; the user still enters only a
+date and generation. If either lag is unavailable, prediction automatically uses
+the fallback model.

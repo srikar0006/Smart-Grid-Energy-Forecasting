@@ -229,7 +229,7 @@ class EnergyApp(tk.Frame):
         self.predict_button.config(state="disabled")
         self.progress.pack(fill="x", pady=(10, 0))
         self.progress.start()
-        self.training_status.set("Validating data and training XGBoost...")
+        self.training_status.set("Training XGBoost from the cleaned daily data...")
         threading.Thread(target=self.train_in_background, daemon=True).start()
 
     def train_in_background(self):
