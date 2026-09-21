@@ -11,15 +11,16 @@ the same 24 hours. All 3,549 days contain exactly 24 hourly observations.
 
 ## Model result
 
-- Features: generation, weekday, annual cycle, and realized-load lags of 1 and 7 days
+- Features: generation, daily mean temperature, weekday, annual cycle, and
+  realized-load lags of 1 and 7 days
 - Split: chronological 72% fit, 8% early-stopping validation, 20% test
 - Test period: 2022-10-10 through 2024-09-18
 - Test days: 710
-- **Test R²: 0.859138**
-- MAE: 438.231
-- RMSE: 577.558
-- Out-of-range fallback R²: 0.752514
+- **Test R²: 0.871173**
+- MAE: 406.598
+- RMSE: 552.333
+- Out-of-range fallback R²: 0.775441
 
-The application looks up lag values automatically; the user still enters only a
-date and generation. If either lag is unavailable, prediction automatically uses
-the fallback model.
+The application looks up lag values automatically. The user enters a date,
+generation, and either manually entered or automatically fetched temperature. If
+either lag is unavailable, prediction automatically uses the fallback model.

@@ -8,7 +8,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from predict import calculate_balance, load_model, predict_realized_load
+from predict import calculate_balance, fetch_temperature, load_model, predict_realized_load
 from train_daily_xgboost import main as train_model
 
 
@@ -43,6 +43,7 @@ class EnergyApp(tk.Frame):
 
         self.date = tk.StringVar(value=datetime.date.today().isoformat())
         self.generation = tk.StringVar(value="14000")
+        self.temperature = tk.StringVar(value="10.0")
         self.prediction = tk.StringVar(value="—")
         self.difference = tk.StringVar(value="—")
         self.percentage = tk.StringVar(value="—")
@@ -102,15 +103,23 @@ class EnergyApp(tk.Frame):
 
         self.input_field(card, "Date", "YYYY-MM-DD", self.date)
         self.input_field(card, "Current energy generation", "daily average", self.generation)
+        self.input_field(card, "Temperature", "daily mean °C", self.temperature)
 
-        self.predict_button = self.button(card, "Predict realized load", self.predict, BLUE)
-        self.predict_button.pack(fill="x", ipady=9, pady=(22, 0))
+        self.fetch_button = self.button(
+            card, "Fetch temperature for date", self.fetch_weather, "#2b3742"
+        )
+        self.fetch_button.pack(fill="x", ipady=7, pady=(16, 0))
+
+        self.predict_button = self.button(
+            card, "Predict with entered temperature", self.predict, BLUE
+        )
+        self.predict_button.pack(fill="x", ipady=9, pady=(10, 0))
 
         ttk.Separator(card).pack(fill="x", pady=22)
         self.card_title(card, "MODEL TRAINING")
         tk.Label(
             card,
-            text="Uses dataframe_daily_cleaned.csv",
+            text="Uses combined.csv",
             bg=CARD,
             fg=MUTED,
         ).pack(anchor="w", pady=(5, 8))
@@ -188,8 +197,14 @@ class EnergyApp(tk.Frame):
         )
 
     def update_score(self):
-        score = read_metrics().get("r2")
-        text = f"TEST R²  {score:.4f}" if score is not None else "MODEL"
+        metrics = read_metrics()
+        lag_score = metrics.get("r2")
+        fallback_score = metrics.get("fallback_r2")
+        text = (
+            f"LAG R²  {lag_score:.4f}\nFALLBACK R²  {fallback_score:.4f}"
+            if lag_score is not None and fallback_score is not None
+            else "MODEL"
+        )
         self.score_label.config(text=text)
 
     def load_saved_model(self):
@@ -206,7 +221,10 @@ class EnergyApp(tk.Frame):
         self.error_label.config(text="")
         try:
             generation = float(self.generation.get())
-            load = predict_realized_load(self.date.get(), generation, self.model)
+            temperature = float(self.temperature.get())
+            load = predict_realized_load(
+                self.date.get(), generation, temperature, self.model
+            )
             result = calculate_balance(generation, load)
         except (TypeError, ValueError) as error:
             self.error_label.config(text=str(error))
@@ -222,6 +240,17 @@ class EnergyApp(tk.Frame):
 
         colors = {"Overproducing": GREEN, "Underproducing": RED, "Balanced": AMBER}
         self.balance_label.config(fg=colors[result["status"]])
+
+    def fetch_weather(self):
+        """Fill the temperature field from local data or Open-Meteo."""
+        self.error_label.config(text="")
+        try:
+            temperature = fetch_temperature(self.date.get())
+        except ValueError as error:
+            self.error_label.config(text=str(error))
+            return
+        self.temperature.set(f"{temperature:.2f}")
+        self.status.set("Temperature loaded for the selected date")
 
     def start_training(self):
         """Start model training without freezing the window."""
@@ -260,8 +289,12 @@ class EnergyApp(tk.Frame):
 
         self.load_saved_model()
         self.update_score()
-        score = read_metrics().get("r2")
-        self.training_status.set(f"Training complete - test R² {score:.4f}")
+        metrics = read_metrics()
+        self.training_status.set(
+            "Training complete - "
+            f"lag R² {metrics['r2']:.4f}, "
+            f"fallback R² {metrics['fallback_r2']:.4f}"
+        )
 
 
 def main():

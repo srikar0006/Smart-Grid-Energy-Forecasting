@@ -4,19 +4,20 @@ This program predicts the average electricity load for a day and compares that
 prediction with the supplied generation. It then reports whether the system is
 **overproducing**, **underproducing**, or **balanced**.
 
-The desktop interface stays simple: the user enters only a date and the current
-daily-average generation. Historical load values are looked up automatically.
+The user enters a date, current daily-average generation, and temperature.
+Temperature can be typed manually or fetched automatically. Historical load
+values are looked up automatically.
 
 ## How the program works
 
 ```text
-Date + current generation
+Date + current generation + temperature
            |
            v
-Validate the two inputs
+Validate the inputs
            |
            v
-Build generation and calendar features
+Build generation, weather, and calendar features
            |
            v
 Look for realized load 1 and 7 days earlier
@@ -42,33 +43,58 @@ Two XGBoost models are stored together:
 - The **fallback model** does not need load history. It allows prediction for
   dates outside the range of the local dataset.
 
-The choice between the two models is automatic and does not add any GUI inputs.
+The choice between the two models is automatic.
 
 ## Input data
 
-Training reads `dataframe_daily_cleaned.csv` directly. It does not clean,
-aggregate, or rewrite the file. The required columns are:
+Training reads `combined.csv` directly. This file combines the cleaned energy
+data with daily temperature:
 
 | Column | Meaning |
 |---|---|
 | `date` | UTC calendar date |
 | `current_energy_generation` | Average generation for that day |
 | `realized_load` | Average measured load for that day |
+| `temperature_celsius` | Mean air temperature for that day in °C |
 
 The file contains 3,549 daily rows. `current_energy_generation` was produced by
 summing the 11 selected generation sources for each hourly observation and then
 averaging the 24 observations in each day. Biomass is excluded from that sum.
 
-The original hourly data is in `dataframe.csv`. The current training code does
-not read that file.
+`weather_data.csv` contains the `date` and `temperature_celsius` columns.
+`combined.csv` contains all three cleaned-energy columns plus temperature. Both
+files have exactly 3,549 matching dates and no missing temperatures.
+
+The original hourly energy data is in `dataframe.csv`. The current training code
+does not read that file.
+
+## Weather data source
+
+Temperature comes from the [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api).
+The location is Frankfurt, Germany (`50.1109° N, 8.6821° E`), used as a
+consistent central-Germany weather proxy. Open-Meteo's hourly `temperature_2m`
+measurement represents air temperature two metres above ground.
+
+Hourly values were requested in UTC for 2015-01-01 through 2024-09-18. The 24
+hourly readings for each date were averaged to create `temperature_celsius` in
+`weather_data.csv`. This was then joined by date with
+`dataframe_daily_cleaned.csv` to create `combined.csv`.
+
+For dates already present in `weather_data.csv`, the GUI reads the saved local
+value and does not require internet access. For other historical dates it uses
+Open-Meteo's archive endpoint. For recent or forecast dates it uses the
+[Open-Meteo Forecast API](https://open-meteo.com/en/docs) and requests daily mean
+temperature. Open-Meteo may not provide forecasts for dates too far into the
+future; the GUI reports that the temperature is unavailable in that case.
 
 ## Model features
 
-Both models use four compact features:
+Both models use five compact features:
 
 | Feature | Purpose |
 |---|---|
 | `current_energy_generation` | Generation entered by the user |
+| `temperature_celsius` | Daily mean temperature entered or fetched by the user |
 | `day_of_week` | Represents weekday and weekend demand patterns |
 | `day_of_year_sin` | First half of a continuous annual cycle |
 | `day_of_year_cos` | Second half of the annual cycle |
@@ -98,11 +124,11 @@ If either date is unavailable, the program uses the fallback model.
 
 Training is implemented in `train_daily_xgboost.py`:
 
-1. Read the already-cleaned daily CSV and parse its dates.
+1. Read `combined.csv` and parse its dates.
 2. Reserve the final 20% of days for testing.
 3. Use the preceding 8% for early-stopping validation.
 4. Use the first 72% for model fitting.
-5. Train the fallback model from generation and calendar features.
+5. Train the fallback model from generation, temperature, and calendar features.
 6. Add the two historical load lags and train the main lag model.
 7. Evaluate the lag model on the untouched final 20%.
 8. Save both models and the evaluation results.
@@ -114,7 +140,7 @@ XGBoost builds regression trees sequentially. Each new tree attempts to correct
 errors made by the earlier trees. Training permits up to 1,500 trees, but early
 stopping ends it when validation RMSE has not improved for 75 rounds.
 
-The saved result stopped at iteration 613.
+The saved result stopped at iteration 1,114.
 
 ## Current evaluation
 
@@ -122,8 +148,8 @@ The held-out test period is 2022-10-10 through 2024-09-18 and contains 710 days.
 
 | Model | R² | MAE | RMSE |
 |---|---:|---:|---:|
-| Lag model | **0.859138** | 438.231 | 577.558 |
-| Fallback model | 0.752514 | — | — |
+| Weather + lag model | **0.871173** | 406.598 | 552.333 |
+| Weather fallback model | 0.775441 | — | — |
 
 R² measures how much of the variation in load is explained by the model. MAE is
 the average absolute prediction error, while RMSE penalizes larger errors more
@@ -133,12 +159,14 @@ strongly. MAE and RMSE use the same units as `realized_load`.
 
 Prediction is implemented in `predict.py`:
 
-1. `validate_inputs()` checks the ISO date and rejects negative, infinite, or
-   missing generation values.
-2. `build_features()` creates generation, weekday, and annual-cycle features.
-3. `add_lags()` looks up the loads from one and seven days earlier.
-4. `predict_realized_load()` selects the lag or fallback model.
-5. `calculate_balance()` compares the prediction with generation.
+1. `validate_inputs()` checks the ISO date, generation, and temperature.
+2. `fetch_temperature()` first checks `weather_data.csv`; if the date is not
+   stored locally, it requests the value from Open-Meteo.
+3. `build_features()` creates generation, temperature, weekday, and annual-cycle
+   features.
+4. `add_lags()` looks up the loads from one and seven days earlier.
+5. `predict_realized_load()` selects the lag or fallback model.
+6. `calculate_balance()` compares the prediction with generation.
 
 The balance calculation is:
 
@@ -159,7 +187,9 @@ excess generation and a leading `-` means insufficient generation.
 ## Desktop interface
 
 `gui.py` provides the Tkinter interface. On startup it loads the saved model
-bundle and test R². Pressing **Predict realized load** calls the shared prediction
+bundle and both test R² values. **Fetch temperature for date** fills the
+temperature field from the local weather CSV or Open-Meteo. The value can also be
+edited manually. **Predict with entered temperature** calls the shared prediction
 and balance functions and displays the result.
 
 Pressing **Train model** starts training in a background thread so the window
@@ -176,6 +206,7 @@ Enter:
 
 - A date in `YYYY-MM-DD` format
 - A non-negative daily-average generation value in the dataset's units
+- A finite daily-mean temperature in °C, entered manually or fetched
 
 ## Saved artifacts
 
@@ -208,8 +239,8 @@ Run all tests:
 .venv/bin/python -m pytest -q
 ```
 
-The tests cover feature creation, lag lookup, fallback behavior, input
-validation, balance calculations, and loading the saved model.
+The tests cover weather lookup, feature creation, lag lookup, fallback behavior,
+input validation, balance calculations, and loading the saved model.
 
 ## Project structure
 
@@ -221,6 +252,8 @@ Smart Grid Energy Forecasting/
 │   └── test_predictions.csv
 ├── dataframe.csv
 ├── dataframe_daily_cleaned.csv
+├── weather_data.csv
+├── combined.csv
 ├── gui.py
 ├── predict.py
 ├── train_daily_xgboost.py

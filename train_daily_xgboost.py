@@ -10,7 +10,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
 
 ROOT = Path(__file__).parent
-DATA_PATH = ROOT / "dataframe_daily_cleaned.csv"
+DATA_PATH = ROOT / "combined.csv"
 ARTIFACT_DIR = ROOT / "artifacts_daily"
 LAGS = (1, 7)
 
@@ -21,6 +21,7 @@ def base_features(data):
     return pd.DataFrame(
         {
             "current_energy_generation": data["current_energy_generation"],
+            "temperature_celsius": data["temperature_celsius"],
             "day_of_week": date.dt.dayofweek,
             "day_of_year_sin": np.sin(2 * np.pi * date.dt.dayofyear / 365.25),
             "day_of_year_cos": np.cos(2 * np.pi * date.dt.dayofyear / 365.25),
@@ -31,12 +32,12 @@ def base_features(data):
 def make_model():
     return XGBRegressor(
         n_estimators=1500,
-        max_depth=4,
+        max_depth=3,
         learning_rate=0.03,
         subsample=0.85,
         colsample_bytree=0.90,
-        min_child_weight=3,
-        reg_lambda=2,
+        min_child_weight=5,
+        reg_lambda=4,
         objective="reg:squarederror",
         eval_metric="rmse",
         early_stopping_rounds=75,
