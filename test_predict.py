@@ -55,11 +55,22 @@ def test_saved_temperature_lookup():
     assert math.isfinite(fetch_temperature("2024-01-15"))
 
 
+def test_temperature_lookup_rejects_date_beyond_forecast_window():
+    date = dt.date.today() + dt.timedelta(days=17)
+    with pytest.raises(ValueError, match="16 days ahead"):
+        fetch_temperature(date.isoformat())
+
+
 def test_balance_status_and_percentage():
     over = calculate_balance(120, 100)
     under = calculate_balance(80, 100)
     assert over == {"status": "Overproducing", "difference": 20.0, "percentage": 20.0}
     assert under == {"status": "Underproducing", "difference": -20.0, "percentage": -20.0}
+
+
+@pytest.mark.parametrize("generation", [95, 100, 105])
+def test_balance_within_five_percent(generation):
+    assert calculate_balance(generation, 100)["status"] == "Balanced"
 
 
 def test_saved_model_predicts_positive_load():

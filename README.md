@@ -179,7 +179,7 @@ The status rules are:
 
 - Positive difference: **Overproducing**
 - Negative difference: **Underproducing**
-- Absolute difference below 0.01%: **Balanced**
+- Percentage difference from −5% through +5%: **Balanced**
 
 The displayed difference and percentage are signed, so a leading `+` means
 excess generation and a leading `-` means insufficient generation.
@@ -189,7 +189,7 @@ excess generation and a leading `-` means insufficient generation.
 `gui.py` provides the Tkinter interface. On startup it loads the saved model
 bundle and both test R² values. **Fetch temperature for date** fills the
 temperature field from the local weather CSV or Open-Meteo. The value can also be
-edited manually. **Predict with entered temperature** calls the shared prediction
+edited manually. **Predict consumption** calls the shared prediction
 and balance functions and displays the result.
 
 Pressing **Train model** starts training in a background thread so the window

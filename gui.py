@@ -111,7 +111,7 @@ class EnergyApp(tk.Frame):
         self.fetch_button.pack(fill="x", ipady=7, pady=(16, 0))
 
         self.predict_button = self.button(
-            card, "Predict with entered temperature", self.predict, BLUE
+            card, "Predict consumption", self.predict, BLUE
         )
         self.predict_button.pack(fill="x", ipady=9, pady=(10, 0))
 
@@ -246,8 +246,8 @@ class EnergyApp(tk.Frame):
         self.error_label.config(text="")
         try:
             temperature = fetch_temperature(self.date.get())
-        except ValueError as error:
-            self.error_label.config(text=str(error))
+        except Exception as error:
+            self.error_label.config(text=f"Could not fetch temperature: {error}")
             return
         self.temperature.set(f"{temperature:.2f}")
         self.status.set("Temperature loaded for the selected date")

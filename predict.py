@@ -63,6 +63,12 @@ def fetch_temperature(date_text):
     if not pd.isna(saved):
         return float(saved)
 
+    if date > dt.date.today() + dt.timedelta(days=16):
+        raise ValueError(
+            "Temperature forecasts are available only up to 16 days ahead. "
+            "Enter the expected temperature manually for this date."
+        )
+
     historical = date < dt.date.today() - dt.timedelta(days=5)
     endpoint = (
         "https://archive-api.open-meteo.com/v1/archive"
@@ -83,7 +89,16 @@ def fetch_temperature(date_text):
         with urlopen(f"{endpoint}?{query}", timeout=15) as response:
             result = json.load(response)
         return float(result["daily"]["temperature_2m_mean"][0])
-    except (HTTPError, URLError, KeyError, IndexError, TypeError, ValueError) as error:
+    except (
+        HTTPError,
+        URLError,
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as error:
         raise ValueError(f"Temperature is unavailable for {date.isoformat()}.") from error
 
 
@@ -120,7 +135,7 @@ def calculate_balance(generation, predicted_load):
         raise ValueError("Predicted realized load must be greater than zero.")
     difference = float(generation - predicted_load)
     percentage = difference / predicted_load * 100
-    if abs(percentage) < 0.01:
+    if abs(percentage) <= 5:
         status = "Balanced"
     elif difference > 0:
         status = "Overproducing"
