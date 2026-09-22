@@ -14,9 +14,7 @@ import pandas as pd
 
 ROOT = Path(__file__).parent
 MODEL_PATH = ROOT / "artifacts_daily" / "daily_xgboost_model.pkl"
-DATA_PATH = ROOT / "dataframe_daily_cleaned.csv"
 WEATHER_PATH = ROOT / "weather_data.csv"
-LAGS = (1, 7)
 LATITUDE = 50.1109
 LONGITUDE = 8.6821
 
@@ -102,19 +100,6 @@ def fetch_temperature(date_text):
         raise ValueError(f"Temperature is unavailable for {date.isoformat()}.") from error
 
 
-def add_lags(features, date):
-    """Add yesterday's and last week's loads when both are available."""
-    history = pd.read_csv(DATA_PATH, usecols=["date", "realized_load"], parse_dates=["date"])
-    history["date"] = pd.to_datetime(history["date"], utc=True).dt.date
-    loads = history.set_index("date")["realized_load"]
-    values = {lag: loads.get(date - dt.timedelta(days=lag)) for lag in LAGS}
-    if any(pd.isna(value) for value in values.values()):
-        return None
-    for lag, value in values.items():
-        features[f"load_lag_{lag}"] = float(value)
-    return features
-
-
 def load_model(path=MODEL_PATH):
     if not path.exists():
         raise FileNotFoundError("Trained model not found. Run train_daily_xgboost.py")
@@ -122,12 +107,35 @@ def load_model(path=MODEL_PATH):
         return pickle.load(file)
 
 
-def predict_realized_load(date_text, generation, temperature, models):
-    date = validate_inputs(date_text, generation, temperature)
+def predict_realized_load(
+    date_text,
+    generation,
+    temperature,
+    models,
+    use_lags=True,
+    load_lag_1=None,
+    load_lag_7=None,
+):
+    validate_inputs(date_text, generation, temperature)
     features = build_features(date_text, generation, temperature)
-    lagged = add_lags(features.copy(), date)
-    model = models["lag"] if lagged is not None else models["fallback"]
-    return float(model.predict(lagged if lagged is not None else features)[0])
+    if not use_lags:
+        return float(models["fallback"].predict(features)[0])
+
+    if (
+        load_lag_1 is None
+        or load_lag_7 is None
+        or not math.isfinite(load_lag_1)
+        or not math.isfinite(load_lag_7)
+        or load_lag_1 < 0
+        or load_lag_7 < 0
+    ):
+        raise ValueError(
+            "Enter valid non-negative realized load values for yesterday "
+            "and seven days ago."
+        )
+    features["load_lag_1"] = float(load_lag_1)
+    features["load_lag_7"] = float(load_lag_7)
+    return float(models["lag"].predict(features)[0])
 
 
 def calculate_balance(generation, predicted_load):

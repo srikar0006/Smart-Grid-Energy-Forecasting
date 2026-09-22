@@ -4,7 +4,6 @@ import math
 import pytest
 
 from predict import (
-    add_lags,
     build_features,
     calculate_balance,
     fetch_temperature,
@@ -18,19 +17,6 @@ def test_feature_values():
     assert features.loc[0, "current_energy_generation"] == 14000
     assert features.loc[0, "temperature_celsius"] == 5.5
     assert features.loc[0, "day_of_week"] == 0
-
-
-def test_historical_lags_are_added():
-    features = build_features("2024-01-15", 14000, 5.5)
-    lagged = add_lags(features, dt.date(2024, 1, 15))
-    assert lagged is not None
-    assert lagged.loc[0, "load_lag_1"] > 0
-    assert lagged.loc[0, "load_lag_7"] > 0
-
-
-def test_out_of_range_date_uses_no_lags():
-    features = build_features("2030-01-15", 14000, 5.5)
-    assert add_lags(features, dt.date(2030, 1, 15)) is None
 
 
 @pytest.mark.parametrize("date", ["", "15-01-2024", "2024-02-30"])
@@ -74,5 +60,37 @@ def test_balance_within_five_percent(generation):
 
 
 def test_saved_model_predicts_positive_load():
-    prediction = predict_realized_load("2024-01-15", 14000, 5.5, load_model())
+    prediction = predict_realized_load(
+        "2024-01-15",
+        14000,
+        5.5,
+        load_model(),
+        load_lag_1=15000,
+        load_lag_7=14500,
+    )
     assert prediction > 0
+
+
+def test_fallback_model_predicts_without_lags():
+    prediction = predict_realized_load(
+        "2030-01-15", 14000, 5.5, load_model(), use_lags=False
+    )
+    assert prediction > 0
+
+
+def test_lag_model_requires_manual_load_values():
+    with pytest.raises(ValueError, match="yesterday"):
+        predict_realized_load("2030-01-15", 14000, 5.5, load_model(), use_lags=True)
+
+
+@pytest.mark.parametrize("lag", [-1, math.inf, math.nan])
+def test_lag_model_rejects_invalid_load_values(lag):
+    with pytest.raises(ValueError, match="non-negative"):
+        predict_realized_load(
+            "2024-01-15",
+            14000,
+            5.5,
+            load_model(),
+            load_lag_1=lag,
+            load_lag_7=14500,
+        )

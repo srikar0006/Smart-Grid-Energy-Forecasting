@@ -5,8 +5,9 @@ prediction with the supplied generation. It then reports whether the system is
 **overproducing**, **underproducing**, or **balanced**.
 
 The user enters a date, current daily-average generation, and temperature.
-Temperature can be typed manually or fetched automatically. Historical load
-values are looked up automatically.
+Temperature can be typed manually or fetched automatically. When the lag model
+is selected, the user also enters the realized loads from one and seven days
+before the prediction date.
 
 ## How the program works
 
@@ -20,9 +21,13 @@ Validate the inputs
 Build generation, weather, and calendar features
            |
            v
-Look for realized load 1 and 7 days earlier
+Choose the prediction model in the GUI
        /                     \
- both found              either missing
+ Lag selected          Fallback selected
+     |                         |
+     v                         v
+Enter 1-day and            No previous-load
+7-day load values            inputs
      |                         |
      v                         v
  Lag model                Fallback model
@@ -43,7 +48,7 @@ Two XGBoost models are stored together:
 - The **fallback model** does not need load history. It allows prediction for
   dates outside the range of the local dataset.
 
-The choice between the two models is automatic.
+The GUI lets the user choose which model to use.
 
 ## Input data
 
@@ -110,15 +115,16 @@ The main lag model also uses:
 | `load_lag_7` | Actual realized load seven days earlier |
 
 These are historical values, not future information. During training they are
-created with `shift(1)` and `shift(7)`. During prediction, the program searches
-`dataframe_daily_cleaned.csv` for the exact earlier dates.
+created with `shift(1)` and `shift(7)`. During prediction, the user supplies both
+values in the GUI when the lag model is selected.
 
-For example, a prediction for `2024-01-15` uses realized load from:
+For example, a lag-model prediction for `2024-01-15` requires the user to enter:
 
 - `2024-01-14` as `load_lag_1`
 - `2024-01-08` as `load_lag_7`
 
-If either date is unavailable, the program uses the fallback model.
+Both fields must contain finite, non-negative values. If those values are not
+known, the user can select the fallback model instead.
 
 ## Training process
 
@@ -164,9 +170,9 @@ Prediction is implemented in `predict.py`:
    stored locally, it requests the value from Open-Meteo.
 3. `build_features()` creates generation, temperature, weekday, and annual-cycle
    features.
-4. `add_lags()` looks up the loads from one and seven days earlier.
-5. `predict_realized_load()` selects the lag or fallback model.
-6. `calculate_balance()` compares the prediction with generation.
+4. `predict_realized_load()` uses the model selected in the GUI. Lag mode adds
+   the two manually entered earlier loads; fallback mode requires neither.
+5. `calculate_balance()` compares the prediction with generation.
 
 The balance calculation is:
 
@@ -192,6 +198,18 @@ temperature field from the local weather CSV or Open-Meteo. The value can also b
 edited manually. **Predict consumption** calls the shared prediction
 and balance functions and displays the result.
 
+The input and training panel has its own vertical scrollbar. It can be scrolled
+with the scrollbar or mouse wheel when the lag fields make the panel taller than
+the window.
+
+The **Prediction model** controls provide two choices:
+
+- **Lag model** uses realized load from one and seven days earlier and normally
+  provides higher accuracy. Selecting it reveals two required load input fields.
+- **Fallback model** uses generation, temperature, and calendar features only.
+  Selecting it hides the two lag fields. Choose it when the earlier loads are
+  unknown.
+
 Pressing **Train model** starts training in a background thread so the window
 does not freeze. A thread-safe queue reports completion back to the Tkinter main
 thread, which then reloads the new model and score.
@@ -207,6 +225,7 @@ Enter:
 - A date in `YYYY-MM-DD` format
 - A non-negative daily-average generation value in the dataset's units
 - A finite daily-mean temperature in °C, entered manually or fetched
+- For lag mode, non-negative realized load values from one and seven days earlier
 
 ## Saved artifacts
 
@@ -239,8 +258,8 @@ Run all tests:
 .venv/bin/python -m pytest -q
 ```
 
-The tests cover weather lookup, feature creation, lag lookup, fallback behavior,
-input validation, balance calculations, and loading the saved model.
+The tests cover weather lookup, feature creation, manual lag validation, fallback
+behavior, balance calculations, and loading the saved model.
 
 ## Project structure
 

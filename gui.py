@@ -44,6 +44,9 @@ class EnergyApp(tk.Frame):
         self.date = tk.StringVar(value=datetime.date.today().isoformat())
         self.generation = tk.StringVar(value="14000")
         self.temperature = tk.StringVar(value="10.0")
+        self.model_mode = tk.StringVar(value="lag")
+        self.load_lag_1 = tk.StringVar(value="")
+        self.load_lag_7 = tk.StringVar(value="")
         self.prediction = tk.StringVar(value="—")
         self.difference = tk.StringVar(value="—")
         self.percentage = tk.StringVar(value="—")
@@ -97,13 +100,101 @@ class EnergyApp(tk.Frame):
         card.grid(row=1, column=column, sticky="nsew", padx=(0, 10) if column == 0 else (10, 0))
         return card
 
+    def new_scrollable_card(self, column):
+        """Create a card whose contents can scroll vertically."""
+        container = tk.Frame(self, bg=CARD)
+        container.grid(
+            row=1,
+            column=column,
+            sticky="nsew",
+            padx=(0, 10) if column == 0 else (10, 0),
+        )
+
+        canvas = tk.Canvas(container, bg=CARD, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        card = tk.Frame(canvas, bg=CARD, padx=24, pady=24)
+        window = canvas.create_window((0, 0), window=card, anchor="nw")
+        card.bind(
+            "<Configure>",
+            lambda event: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda event: canvas.itemconfigure(window, width=event.width),
+        )
+
+        def scroll(event):
+            direction = -1 if event.num == 4 or event.delta > 0 else 1
+            canvas.yview_scroll(direction, "units")
+
+        def enable_scroll(_event):
+            canvas.bind_all("<MouseWheel>", scroll)
+            canvas.bind_all("<Button-4>", scroll)
+            canvas.bind_all("<Button-5>", scroll)
+
+        def disable_scroll(_event):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        container.bind("<Enter>", enable_scroll)
+        container.bind("<Leave>", disable_scroll)
+        return card
+
     def build_input_card(self):
-        card = self.new_card(0)
+        card = self.new_scrollable_card(0)
         self.card_title(card, "INPUT")
 
         self.input_field(card, "Date", "YYYY-MM-DD", self.date)
         self.input_field(card, "Current energy generation", "daily average", self.generation)
         self.input_field(card, "Temperature", "daily mean °C", self.temperature)
+
+        tk.Label(card, text="Prediction model", bg=CARD, fg=TEXT).pack(
+            anchor="w", pady=(16, 4)
+        )
+        tk.Radiobutton(
+            card,
+            text="Lag model (uses load from 1 and 7 days earlier)",
+            variable=self.model_mode,
+            value="lag",
+            bg=CARD,
+            fg=TEXT,
+            selectcolor=BG,
+            activebackground=CARD,
+            activeforeground=TEXT,
+            command=self.update_model_inputs,
+        ).pack(anchor="w")
+        tk.Radiobutton(
+            card,
+            text="Fallback model (no previous load required)",
+            variable=self.model_mode,
+            value="fallback",
+            bg=CARD,
+            fg=TEXT,
+            selectcolor=BG,
+            activebackground=CARD,
+            activeforeground=TEXT,
+            command=self.update_model_inputs,
+        ).pack(anchor="w")
+
+        self.lag_input_frame = tk.Frame(card, bg=CARD)
+        self.lag_input_frame.pack(fill="x")
+        self.input_field(
+            self.lag_input_frame,
+            "Yesterday's realized load",
+            "1 day earlier",
+            self.load_lag_1,
+        )
+        self.input_field(
+            self.lag_input_frame,
+            "Realized load 7 days ago",
+            "7 days earlier",
+            self.load_lag_7,
+        )
 
         self.fetch_button = self.button(
             card, "Fetch temperature for date", self.fetch_weather, "#2b3742"
@@ -207,6 +298,13 @@ class EnergyApp(tk.Frame):
         )
         self.score_label.config(text=text)
 
+    def update_model_inputs(self):
+        """Show manual lag inputs only when the lag model is selected."""
+        if self.model_mode.get() == "lag":
+            self.lag_input_frame.pack(fill="x", before=self.fetch_button)
+        else:
+            self.lag_input_frame.pack_forget()
+
     def load_saved_model(self):
         try:
             self.model = load_model()
@@ -222,8 +320,25 @@ class EnergyApp(tk.Frame):
         try:
             generation = float(self.generation.get())
             temperature = float(self.temperature.get())
+            use_lags = self.model_mode.get() == "lag"
+            if use_lags:
+                try:
+                    load_lag_1 = float(self.load_lag_1.get())
+                    load_lag_7 = float(self.load_lag_7.get())
+                except ValueError as error:
+                    raise ValueError(
+                        "Enter realized load for yesterday and seven days ago."
+                    ) from error
+            else:
+                load_lag_1 = load_lag_7 = None
             load = predict_realized_load(
-                self.date.get(), generation, temperature, self.model
+                self.date.get(),
+                generation,
+                temperature,
+                self.model,
+                use_lags=use_lags,
+                load_lag_1=load_lag_1,
+                load_lag_7=load_lag_7,
             )
             result = calculate_balance(generation, load)
         except (TypeError, ValueError) as error:
@@ -301,8 +416,8 @@ def main():
     root = tk.Tk()
     root.option_add("*Font", ("Arial", 13))
     root.title("Energy Production Monitor")
-    root.geometry("980x780")
-    root.minsize(860, 700)
+    root.geometry("980x900")
+    root.minsize(860, 820)
     root.configure(bg=BG)
     ttk.Style(root).theme_use("clam")
     EnergyApp(root)

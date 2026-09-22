@@ -21,6 +21,7 @@ the same 24 hours. All 3,549 days contain exactly 24 hourly observations.
 - RMSE: 552.333
 - Out-of-range fallback R²: 0.775441
 
-The application looks up lag values automatically. The user enters a date,
-generation, and either manually entered or automatically fetched temperature. If
-either lag is unavailable, prediction automatically uses the fallback model.
+The user enters a date, generation, and either manually entered or automatically
+fetched temperature, then selects the lag or fallback model. Lag mode reveals
+required inputs for realized load one and seven days earlier. Fallback mode does
+not require those values.
